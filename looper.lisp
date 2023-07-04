@@ -83,12 +83,31 @@
 
 ; run
 (define line (try-parse prompt (ansi2txt (port->bytestream (car Out))) #false))
-(print "adddress: " (car line))
+(print "address: " (car line))
 
 ; connect:
 (send "connect")
 (define line (try-parse skipper (cdr line) #false)) ; < Attempting to connect to ...
 (define line (try-parse skipper (cdr line) #false)) ; < Connection successful
+
+; open database:
+; (define *features* (cons 'sqlite-log-debug (features))) ; temp, enable debug
+(import (lib sqlite))
+(define database (make-sqlite3))
+(sqlite3_open "radiacode-101.sqlite" database)
+
+(define (db:value . args) (apply sqlite:value (cons database args)))
+(define (db:query . args) (apply sqlite:query (cons database args)))
+
+(db:query "CREATE TABLE IF NOT EXISTS radiation (
+   id INTEGER PRIMARY KEY
+
+,  background REAL
+,  background_raw REAL
+,  cps REAL
+,  cps_raw REAL
+,  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)")
 
 ; start receiving data:
 (send "char-write-req 0x0011 0100") (sleep 100)
@@ -112,13 +131,14 @@
       ; good answer:
       (when (and (list? answer) (string-eq? (car answer) "Characteristic value was written successfully"))
          (define buffer (fold  string-append "" (map (lambda (s) (substring s 36)) (cdr answer))))
-         (define numbers (substring buffer 114 125))
-         (define bytes (list->bytevector (map (lambda (s) (string->number s 16)) (c/ / numbers))))
-         (define microroentgen (* (bytevector->float bytes 0) #i1000000))
+
+         (define numbers1 (substring buffer 114 125))
+         (define bytes1 (list->bytevector (map (lambda (s) (string->number s 16)) (c/ / numbers1))))
+         (define background (* (bytevector->float bytes1 0) #i1000000))
 
          (define numbers2 (substring buffer 159 170))
          (define bytes2 (list->bytevector (map (lambda (s) (string->number s 16)) (c/ / numbers2))))
-         (define microroentgen_raw (* (bytevector->float bytes2 0) #i1000000))
+         (define background_raw (* (bytevector->float bytes2 0) #i1000000))
 
          (define numbers3 (substring buffer 198 209))
          (define bytes3 (list->bytevector (map (lambda (s) (string->number s 16)) (c/ / numbers3))))
@@ -128,14 +148,16 @@
          (define bytes4 (list->bytevector (map (lambda (s) (string->number s 16)) (c/ / numbers4))))
          (define cps (bytevector->float bytes4 0))
 
-         (print (syscall 201 "%F %H:%M:%S") " : " (/ microroentgen #i100) " мкЗв/ч" " ("
-               (/ microroentgen_raw #i100) ") / "
+         (print (syscall 201 "%F %H:%M:%S") " : " (/ background #i100) " мкЗв/ч" " ("
+               (/ background_raw #i100) ") / "
                cps " (" cps_raw ")"
-         ))
+         )
+         (db:query "INSERT INTO radiation (background, background_raw, cps, cps_raw) VALUES (?,?,?,?)" background background_raw cps cps_raw) )
 
       (loop stream (++ timestamp))))
 
 ; done:
 (send "exit")
+(sqlite3_close database)
 ;; (system (map c-string (list "/usr/bin/kill" (number->string pid) "-9")))
 (close-port (car Out))
