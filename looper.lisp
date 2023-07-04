@@ -39,8 +39,8 @@
                         (#\C 1) ; move right
                         (#\0 (let do ((n 2) (in (cdddr in)))
                                  (if (eq? (car in) #\m) n (do (++ n) (cdr in))))) ; todo: process functions
-                        (else
-                           (print "unknown escape code " third "(" (string third) ")") 0)))))
+                        (else 0)))))
+                           ;; (print "unknown escape code " third "(" (string third) ")") 0)))))
 
             else
                (loop (cons (car in) out) (cdr in)))))))
@@ -114,7 +114,24 @@
          (define buffer (fold  string-append "" (map (lambda (s) (substring s 36)) (cdr answer))))
          (define numbers (substring buffer 114 125))
          (define bytes (list->bytevector (map (lambda (s) (string->number s 16)) (c/ / numbers))))
-         (print (syscall 201 "%F %H:%M:%S") ": " (* (bytevector->float bytes 0) #i10000) " мкЗв/ч"))
+         (define microroentgen (* (bytevector->float bytes 0) #i1000000))
+
+         (define numbers2 (substring buffer 159 170))
+         (define bytes2 (list->bytevector (map (lambda (s) (string->number s 16)) (c/ / numbers2))))
+         (define microroentgen_raw (* (bytevector->float bytes2 0) #i1000000))
+
+         (define numbers3 (substring buffer 198 209))
+         (define bytes3 (list->bytevector (map (lambda (s) (string->number s 16)) (c/ / numbers3))))
+         (define cps_raw (bytevector->float bytes3 0))
+
+         (define numbers4 (substring buffer 69 80))
+         (define bytes4 (list->bytevector (map (lambda (s) (string->number s 16)) (c/ / numbers4))))
+         (define cps (bytevector->float bytes4 0))
+
+         (print (syscall 201 "%F %H:%M:%S") " : " (/ microroentgen #i100) " мкЗв/ч" " ("
+               (/ microroentgen_raw #i100) ") / "
+               cps " (" cps_raw ")"
+         ))
 
       (loop stream (++ timestamp))))
 
